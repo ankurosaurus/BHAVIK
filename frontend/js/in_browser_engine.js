@@ -172,6 +172,10 @@ class InBrowserEngine {
         this.heldLetter = pred.letter;
         status = "ACCEPTED";
       }
+    } else {
+      if (pred.letter !== this.heldLetter) {
+        this.heldLetter = null;
+      }
     }
 
     return {

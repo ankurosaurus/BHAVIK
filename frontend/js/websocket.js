@@ -21,8 +21,19 @@ class RecognitionSocket {
   }
 
   getWebSocketUrl() {
+    if (window.location.protocol === 'file:') {
+      return `ws://localhost:8000${this.endpoint}`;
+    }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host || 'localhost:8000';
+    let host = window.location.host;
+    if (!host || host === '') {
+      host = 'localhost:8000';
+    } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      if (window.location.port !== '8000' && window.location.port !== '8443') {
+        const port = window.location.protocol === 'https:' ? '8443' : '8000';
+        host = `${window.location.hostname}:${port}`;
+      }
+    }
     return `${protocol}//${host}${this.endpoint}`;
   }
 

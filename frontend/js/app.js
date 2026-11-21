@@ -92,10 +92,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Link WebSocket to UI & Transcription
   socket.onMessageCallback = (data) => {
-    handleRecognitionData(data);
+    if (camera.mode === 'server') {
+      handleRecognitionData(data);
+    }
   };
 
   socket.onStatusChangeCallback = (status) => {
+    if (status === 'ONLINE') {
+      camera.setMode('server');
+    }
     updateServerStatus(status);
   };
 
@@ -182,14 +187,17 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateServerStatus(status) {
     if (status === 'ONLINE') {
       serverStatusDot.className = 'status-dot online';
-      serverStatusText.textContent = 'AI Engine Connected';
+      serverStatusText.textContent = 'AI Engine: Server Connected';
     } else if (status === 'CONNECTING') {
       serverStatusDot.className = 'status-dot';
-      serverStatusText.textContent = 'Connecting to AI...';
+      serverStatusText.textContent = 'Connecting to Server...';
     } else {
-      if (typeof inBrowserEngine !== 'undefined' && inBrowserEngine.isReady()) {
+      if (camera && camera.mode === 'client' && camera.useInBrowserMediaPipe) {
         serverStatusDot.className = 'status-dot online';
-        serverStatusText.textContent = 'AI Engine: Client Ready';
+        serverStatusText.textContent = 'AI Engine: Browser Active';
+      } else if (typeof inBrowserEngine !== 'undefined' && inBrowserEngine.isReady()) {
+        serverStatusDot.className = 'status-dot online';
+        serverStatusText.textContent = 'AI Engine: Browser Ready';
       } else {
         serverStatusDot.className = 'status-dot';
         serverStatusText.textContent = 'AI Disconnected';
@@ -206,28 +214,45 @@ document.addEventListener('DOMContentLoaded', () => {
       startCameraBtn.textContent = 'Starting...';
       await camera.startCamera();
 
-      // Initialize in-browser MediaPipe inference for zero-latency client recognition
-      if (typeof inBrowserEngine !== 'undefined' && inBrowserEngine.isReady()) {
-        camera.initInBrowserMediaPipe((results) => {
-          let landmarks = null;
-          if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-            landmarks = results.multiHandLandmarks[0].map((pt) => ({
-              x: pt.x,
-              y: pt.y,
-              z: pt.z,
-            }));
-          }
-
-          const res = inBrowserEngine.processLandmarks(landmarks);
-          if (res.accepted_letter) {
-            transcription.addLetter(res.accepted_letter);
-            updateTranscriptionMeta(transcription.getState());
-          }
-          handleRecognitionData(res);
-        });
-
+      // Determine inference engine: Server WebSocket vs In-Browser ML
+      if (socket.isConnected) {
+        camera.setMode('server');
         serverStatusDot.className = 'status-dot online';
-        serverStatusText.textContent = 'AI Engine: Active';
+        serverStatusText.textContent = 'AI Engine: Server Active';
+      } else {
+        // Fallback to client-side in-browser MediaPipe if server is not connected (e.g. GitHub Pages)
+        if (typeof inBrowserEngine !== 'undefined' && inBrowserEngine.isReady()) {
+          serverStatusText.textContent = 'Initializing Browser AI...';
+          const initialized = await camera.initInBrowserMediaPipe((results) => {
+            if (camera.mode !== 'client') return;
+
+            let landmarks = null;
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+              landmarks = results.multiHandLandmarks[0].map((pt) => ({
+                x: pt.x,
+                y: pt.y,
+                z: pt.z,
+              }));
+            }
+
+            const res = inBrowserEngine.processLandmarks(landmarks);
+            if (res.accepted_letter) {
+              transcription.addLetter(res.accepted_letter);
+              updateTranscriptionMeta(transcription.getState());
+            }
+            handleRecognitionData(res);
+          });
+
+          if (initialized) {
+            camera.setMode('client');
+            serverStatusDot.className = 'status-dot online';
+            serverStatusText.textContent = 'AI Engine: Browser Active';
+          } else {
+            camera.setMode('server');
+          }
+        } else {
+          camera.setMode('server');
+        }
       }
 
       emptyState.style.display = 'none';

@@ -24,6 +24,12 @@ class CameraController {
     this.onFrameCallback = null;
     this.onErrorCallback = null;
 
+    // Mode: 'server' (stream to FastAPI WebSocket backend) vs 'client' (in-browser MediaPipe)
+    this.mode = 'server';
+    this.useInBrowserMediaPipe = false;
+    this.isProcessingMediaPipe = false;
+    this.mpHands = null;
+
     // Offscreen canvas for JPEG encoding
     this.offscreenCanvas = document.createElement('canvas');
     this.offscreenCanvas.width = this.width;
@@ -153,50 +159,93 @@ class CameraController {
     }
   }
 
-  initInBrowserMediaPipe(onResultsCallback) {
-    if (typeof window.Hands === 'function') {
-      try {
-        this.mpHands = new window.Hands({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-        });
-        this.mpHands.setOptions({
-          maxNumHands: 1,
-          modelComplexity: 1,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5
-        });
-        this.mpHands.onResults((results) => {
-          if (onResultsCallback) {
-            onResultsCallback(results);
-          }
-        });
-        this.useInBrowserMediaPipe = true;
-      } catch (err) {
-        console.warn('Could not initialize in-browser MediaPipe:', err);
-        this.useInBrowserMediaPipe = false;
-      }
+  setMode(mode) {
+    this.mode = mode; // 'server' or 'client'
+  }
+
+  async initInBrowserMediaPipe(onResultsCallback) {
+    if (this.mpHands) {
+      this.useInBrowserMediaPipe = true;
+      return true;
+    }
+
+    if (typeof window.Hands !== 'function') {
+      console.warn('MediaPipe Hands is not loaded in window.Hands');
+      this.useInBrowserMediaPipe = false;
+      return false;
+    }
+
+    try {
+      this.mpHands = new window.Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+      this.mpHands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 0, // Lite model: smooth and responsive on web/mobile CPU
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+      this.mpHands.onResults((results) => {
+        if (onResultsCallback) {
+          onResultsCallback(results);
+        }
+      });
+
+      // Warm up MediaPipe WASM graph
+      await this.mpHands.initialize();
+      this.useInBrowserMediaPipe = true;
+      return true;
+    } catch (err) {
+      console.warn('Could not initialize in-browser MediaPipe:', err);
+      this.useInBrowserMediaPipe = false;
+      return false;
     }
   }
 
   captureAndEmitFrame() {
     if (!this.video || this.video.readyState < 2) return;
 
-    if (this.useInBrowserMediaPipe && this.mpHands) {
-      this.mpHands.send({ image: this.video });
+    // 1. Server Mode: send JPEG frame to FastAPI WebSocket backend
+    if (this.mode === 'server') {
+      if (!this.onFrameCallback) return;
+
+      const w = this.offscreenCanvas.width;
+      const h = this.offscreenCanvas.height;
+      if (w <= 0 || h <= 0) return;
+
+      this.offscreenCtx.drawImage(this.video, 0, 0, w, h);
+      const jpegDataUrl = this.offscreenCanvas.toDataURL('image/jpeg', 0.65);
+      this.onFrameCallback(jpegDataUrl);
       return;
     }
 
-    if (!this.onFrameCallback) return;
+    // 2. Client Mode: evaluate with in-browser MediaPipe with strict concurrency locking
+    if (this.mode === 'client' && this.useInBrowserMediaPipe && this.mpHands) {
+      if (this.isProcessingMediaPipe) {
+        return; // Skip frame if previous WASM frame is still in flight (prevents pipeline lockup!)
+      }
 
-    const w = this.offscreenCanvas.width;
-    const h = this.offscreenCanvas.height;
+      this.isProcessingMediaPipe = true;
+      this.mpHands.send({ image: this.video })
+        .catch((err) => {
+          console.warn('In-browser MediaPipe inference error:', err);
+        })
+        .finally(() => {
+          this.isProcessingMediaPipe = false;
+        });
+      return;
+    }
 
-    // Draw video frame to offscreen canvas
-    this.offscreenCtx.drawImage(this.video, 0, 0, w, h);
-
-    // Compress to JPEG (quality 0.70 optimizes bandwidth and CPU on mobile)
-    const jpegDataUrl = this.offscreenCanvas.toDataURL('image/jpeg', 0.70);
-    this.onFrameCallback(jpegDataUrl);
+    // 3. Fallback: stream frame if callback exists
+    if (this.onFrameCallback) {
+      const w = this.offscreenCanvas.width;
+      const h = this.offscreenCanvas.height;
+      if (w > 0 && h > 0) {
+        this.offscreenCtx.drawImage(this.video, 0, 0, w, h);
+        const jpegDataUrl = this.offscreenCanvas.toDataURL('image/jpeg', 0.65);
+        this.onFrameCallback(jpegDataUrl);
+      }
+    }
   }
 
   drawLandmarks(landmarks) {

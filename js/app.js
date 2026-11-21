@@ -81,9 +81,48 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Handle client-side MediaPipe landmark results
+  function handleClientMediaPipeResults(results) {
+    if (camera.mode !== 'client') return;
+
+    let landmarks = null;
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      landmarks = results.multiHandLandmarks[0].map((pt) => ({
+        x: pt.x,
+        y: pt.y,
+        z: pt.z,
+      }));
+    }
+
+    const res = inBrowserEngine.processLandmarks(landmarks);
+    if (res.accepted_letter) {
+      transcription.addLetter(res.accepted_letter);
+      updateTranscriptionMeta(transcription.getState());
+    }
+    handleRecognitionData(res);
+  }
+
+  // Pre-initialize in-browser MediaPipe immediately on page load
+  if (typeof inBrowserEngine !== 'undefined' && inBrowserEngine.isReady()) {
+    camera.initInBrowserMediaPipe(handleClientMediaPipeResults).catch(() => {});
+  }
+
+  // Auto-detect mode: On GitHub Pages (*.github.io), start directly in client mode
+  const isGitHubPages = window.location.hostname.endsWith('github.io');
+  if (isGitHubPages) {
+    camera.setMode('client');
+    serverStatusDot.className = 'status-dot online';
+    serverStatusText.textContent = 'AI Engine: Browser Ready';
+  } else {
+    camera.setMode('server');
+    socket.connect();
+  }
+
   // Link Camera to WebSocket
   camera.onFrameCallback = (jpegDataUrl) => {
-    socket.sendFrame(jpegDataUrl);
+    if (camera.mode === 'server') {
+      socket.sendFrame(jpegDataUrl);
+    }
   };
 
   camera.onErrorCallback = (errInfo) => {
@@ -103,9 +142,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     updateServerStatus(status);
   };
-
-  // Connect WebSocket initially
-  socket.connect();
 
   // ==========================================================================
   // Recognition Result Handler
@@ -244,42 +280,29 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         // Fallback to client-side in-browser MediaPipe if server is not connected (e.g. GitHub Pages)
         if (typeof inBrowserEngine !== 'undefined' && inBrowserEngine.isReady()) {
-          serverStatusText.textContent = 'Loading Browser AI...';
-
-          camera.initInBrowserMediaPipe((results) => {
-            if (camera.mode !== 'client') return;
-
-            let landmarks = null;
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-              landmarks = results.multiHandLandmarks[0].map((pt) => ({
-                x: pt.x,
-                y: pt.y,
-                z: pt.z,
-              }));
-            }
-
-            const res = inBrowserEngine.processLandmarks(landmarks);
-            if (res.accepted_letter) {
-              transcription.addLetter(res.accepted_letter);
-              updateTranscriptionMeta(transcription.getState());
-            }
-            handleRecognitionData(res);
-          }).then((initialized) => {
-            if (initialized) {
-              camera.setMode('client');
-              serverStatusDot.className = 'status-dot online';
-              serverStatusText.textContent = 'AI Engine: Browser Active';
-            } else {
+          camera.setMode('client');
+          if (camera.useInBrowserMediaPipe) {
+            serverStatusDot.className = 'status-dot online';
+            serverStatusText.textContent = 'AI Engine: Browser Active';
+          } else {
+            serverStatusText.textContent = 'Loading Browser AI...';
+            camera.initInBrowserMediaPipe(handleClientMediaPipeResults).then((initialized) => {
+              if (initialized) {
+                camera.setMode('client');
+                serverStatusDot.className = 'status-dot online';
+                serverStatusText.textContent = 'AI Engine: Browser Active';
+              } else {
+                camera.setMode('server');
+                serverStatusDot.className = 'status-dot';
+                serverStatusText.textContent = 'AI Disconnected';
+              }
+            }).catch((err) => {
+              console.warn('In-browser AI init error:', err);
               camera.setMode('server');
               serverStatusDot.className = 'status-dot';
               serverStatusText.textContent = 'AI Disconnected';
-            }
-          }).catch((err) => {
-            console.warn('In-browser AI init error:', err);
-            camera.setMode('server');
-            serverStatusDot.className = 'status-dot';
-            serverStatusText.textContent = 'AI Disconnected';
-          });
+            });
+          }
         } else {
           camera.setMode('server');
         }

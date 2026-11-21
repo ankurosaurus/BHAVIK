@@ -232,6 +232,10 @@ class CameraController {
   }
 
   async initInBrowserMediaPipe(onResultsCallback) {
+    if (onResultsCallback) {
+      this.onClientMediaPipeResults = onResultsCallback;
+    }
+
     if (this.mpHands) {
       this.useInBrowserMediaPipe = true;
       return true;
@@ -262,13 +266,11 @@ class CameraController {
         minTrackingConfidence: 0.5
       });
       this.mpHands.onResults((results) => {
-        if (onResultsCallback) {
-          onResultsCallback(results);
+        if (this.onClientMediaPipeResults) {
+          this.onClientMediaPipeResults(results);
         }
       });
 
-      // Warm up MediaPipe WASM graph
-      await this.mpHands.initialize();
       this.useInBrowserMediaPipe = true;
       return true;
     } catch (err) {
@@ -279,7 +281,7 @@ class CameraController {
   }
 
   captureAndEmitFrame() {
-    if (!this.video || this.video.readyState < 2) return;
+    if (!this.video || !this.video.videoWidth || this.video.videoWidth === 0) return;
 
     // 1. Server Mode: send JPEG frame to FastAPI WebSocket backend
     if (this.mode === 'server') {

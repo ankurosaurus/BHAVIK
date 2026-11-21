@@ -1,18 +1,28 @@
 # BHAVIK: Bridging Hands and Visual Intelligence through Knowledge
 ### Real-Time Sign Language Fingerspelling Recognition and Transcription System
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-00d2b4.svg)](https://ankurosaurus.github.io/BHAVIK/)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-ankurosaurus%2FBHAVIK-181717.svg?logo=github)](https://github.com/ankurosaurus/BHAVIK)
 [![Python 3.10](https://img.shields.io/badge/Python-3.10-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg)](https://fastapi.tiangolo.com/)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-0.10.14-00d2b4.svg)](https://developers.google.com/mediapipe)
 [![Scikit-Learn](https://img.shields.io/badge/Scikit--Learn-1.7.2-F7931E.svg)](https://scikit-learn.org/)
-[![Accuracy](https://img.shields.io/badge/Test%20Accuracy-96.17%25-brightgreen.svg)]()
+[![Accuracy](https://img.shields.io/badge/Test%20Accuracy-99.57%25-brightgreen.svg)]()
+[![Dataset](https://img.shields.io/badge/Dataset-77%2C554%20Samples-informational.svg)]()
 [![Tests](https://img.shields.io/badge/Pytest-32%20Passed-success.svg)]()
 
 > *"Your Hands. Your Voice. Your Words."*
 
+### 🌐 Live Deployed Web Application
+👉 **[Launch BHAVIK on GitHub Pages](https://ankurosaurus.github.io/BHAVIK/)**
+
+*Works directly in your mobile or desktop web browser with front/rear camera support, client-side ML inference, and zero server installation required.*
+
+---
+
 **BHAVIK** is a real-time, cross-platform sign language fingerspelling recognition and continuous transcription system engineered for second-year B.Tech Computer Science & Engineering students, researchers, and accessibility advocates.
 
-The system recognizes the **24 static letters of the American Sign Language (ASL) alphabet** through live video feeds and continuously transcribes hand gestures into words and sentences. It is architected from the ground up as a responsive, mobile-first progressive web application that works seamlessly on both **desktop webcams** and **Android/iOS smartphone cameras**.
+The system recognizes all **26 letters (A through Z)** of the American Sign Language (ASL) fingerspelling alphabet through live video feeds and continuously transcribes hand gestures into words and sentences. It is architected from the ground up as a responsive, mobile-first progressive web application that works seamlessly on both **desktop webcams** and **Android/iOS smartphone cameras**.
 
 ---
 

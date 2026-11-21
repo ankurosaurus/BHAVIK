@@ -1,0 +1,22 @@
+{
+  "name": "BHAVIK - ASL Fingerspelling Recognition",
+  "short_name": "BHAVIK",
+  "description": "Real-time sign language fingerspelling recognition and continuous transcription system",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0c1017",
+  "theme_color": "#00d2b4",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>BHAVIK – Real-Time Sign Language Recognition</title>
+  
+  <!-- PWA & Mobile Optimization -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#00d2b4">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" type="image/png" href="./assets/icon-192.png">
+
+  <!-- Core Stylesheet -->
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+  <!-- Top Header Navigation -->
+  <header class="app-header">
+    <div class="brand-section">
+      <img src="./assets/icon-192.png" alt="BHAVIK Logo" class="brand-logo">
+      <div class="brand-info">
+        <h1>BHAVIK</h1>
+        <p class="brand-tagline">Your Hands. Your Voice. Your Words.</p>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="status-badge" id="server-status-pill" title="AI Inference Engine Status">
+        <span class="status-dot" id="server-status-dot"></span>
+        <span id="server-status-text">Connecting...</span>
+      </div>
+      <button class="btn btn-secondary btn-icon" id="btn-open-guide" aria-label="ASL Sign Guide" title="ASL Reference Guide">
+        ?
+      </button>
+      <button class="btn btn-secondary btn-icon" id="btn-open-settings" aria-label="Settings" title="Inference Settings">
+        ⚙
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Application Body -->
+  <main class="app-main">
+    
+    <!-- Camera Permission & HTTPS Advisory Banner -->
+    <div class="alert-banner" id="permission-banner" role="alert">
+      <div>
+        <strong>Mobile & Camera Notice:</strong> Grant camera permission when prompted. If testing across local Wi-Fi on a smartphone, modern browsers require an <strong>HTTPS tunnel</strong> (e.g. Cloudflare Tunnel or ngrok) for camera access.
+      </div>
+      <button class="btn btn-secondary" id="btn-banner-dismiss" style="min-height:36px; padding:4px 12px; font-size:0.75rem;">
+        Dismiss
+      </button>
+    </div>
+
+    <!-- Workspace: Dual Column on Desktop, Stacked on Mobile -->
+    <div class="workspace-grid">
+      
+      <!-- Left Column: Video Capture & Hand Landmarks Viewport -->
+      <section class="camera-card" aria-label="Camera Video Viewport">
+        <div class="camera-header">
+          <span class="card-title">Live Video Input</span>
+          <span class="hud-pill" id="hud-fps">0 FPS</span>
+        </div>
+
+        <div class="camera-viewport">
+          <video id="camera-video" playsinline autoplay muted aria-label="Live Camera Stream"></video>
+          <canvas id="landmark-canvas" aria-hidden="true"></canvas>
+
+          <!-- Viewport HUD Overlay -->
+          <div class="viewport-overlay">
+            <span class="hud-pill" id="hud-hand-status">Camera OFF</span>
+          </div>
+
+          <!-- Empty State (Shown before camera starts) -->
+          <div class="camera-empty-state" id="camera-empty-state">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent-teal)">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+            <p>Ready to recognize ASL fingerspelling.</p>
+            <p style="font-size:0.8rem; color:var(--text-dim);">Position your hand clearly within the camera frame.</p>
+          </div>
+        </div>
+
+        <!-- Camera Controls -->
+        <div class="camera-controls-bar">
+          <button class="btn btn-primary" id="btn-start-camera">
+            Start Camera
+          </button>
+          <button class="btn btn-danger" id="btn-stop-camera" style="display:none;">
+            Stop Camera
+          </button>
+          <button class="btn btn-secondary" id="btn-switch-camera" disabled>
+            Switch Camera (Front/Rear)
+          </button>
+          <button class="btn btn-secondary" id="btn-toggle-mirror" disabled>
+            Flip Preview
+          </button>
+        </div>
+      </section>
+
+      <!-- Right Column: Recognition HUD & Confidence Display -->
+      <section class="recognition-card" aria-label="Real-Time Recognition Results">
+        <div class="card-title">Real-Time Gesture Prediction</div>
+
+        <!-- Predicted Letter Hero Display -->
+        <div class="letter-display-box" id="letter-display-box">
+          <div class="active-letter" id="active-predicted-letter">—</div>
+          <span class="letter-subtitle">Current Predicted Letter</span>
+        </div>
+
+        <!-- Metrics Gauges (Confidence & Stability) -->
+        <div class="metrics-section">
+          <div class="metric-row">
+            <div class="metric-label-group">
+              <span>ML Classifier Confidence</span>
+              <span id="confidence-val-text">0%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="confidence-progress-fill"></div>
+            </div>
+          </div>
+
+          <div class="metric-row">
+            <div class="metric-label-group">
+              <span>Stabilization Progress</span>
+              <span id="stability-val-text">0%</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill stability-fill" id="stability-progress-fill"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Status & State Summary -->
+        <div class="info-grid">
+          <div class="info-cell">
+            <span>Last Accepted</span>
+            <span id="last-accepted-val">—</span>
+          </div>
+          <div class="info-cell">
+            <span>Pipeline State</span>
+            <span id="recognition-status-val">Standby</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Bottom Section: Continuous Transcription Panel -->
+    <section class="transcription-card" aria-label="Continuous Transcription and Text Output">
+      <div class="transcription-header">
+        <span class="card-title">Live Continuous Transcription</span>
+        <span class="status-badge" id="word-count-badge">0 words (0 chars)</span>
+      </div>
+
+      <!-- Main Live Text Area -->
+      <div class="live-transcript-box" id="live-transcript" tabindex="0" role="textbox" aria-multiline="true" aria-label="Constructed sign language transcript"></div>
+
+      <!-- Touch-Friendly Controls (>= 48px Tap Targets) -->
+      <div class="transcript-controls">
+        <button class="btn btn-primary" id="btn-space">
+          Space ␣
+        </button>
+        <button class="btn btn-secondary" id="btn-backspace">
+          ⌫ Backspace
+        </button>
+        <button class="btn btn-secondary" id="btn-copy">
+          Copy Text
+        </button>
+        <button class="btn btn-secondary" id="btn-speak">
+          🔊 Speak (TTS)
+        </button>
+        <button class="btn btn-danger" id="btn-clear">
+          Clear
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Settings Modal Drawer -->
+  <div class="modal-overlay" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="settings-title" style="font-size:1.1rem; font-weight:700;">Inference & Stabilizer Settings</h2>
+        <button class="btn btn-secondary btn-icon" id="btn-close-settings" style="min-height:36px; width:36px;">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="slider-confidence">
+            <span>Confidence Threshold</span>
+            <span id="val-confidence">70%</span>
+          </label>
+          <input type="range" id="slider-confidence" min="0.4" max="0.95" step="0.05" value="0.70">
+          <span style="font-size:0.75rem; color:var(--text-dim);">Minimum classifier probability required to consider a prediction valid.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="slider-buffer">
+            <span>Temporal Buffer Size</span>
+            <span id="val-buffer">10 frames</span>
+          </label>
+          <input type="range" id="slider-buffer" min="5" max="20" step="1" value="10">
+          <span style="font-size:0.75rem; color:var(--text-dim);">Number of consecutive frames sampled for majority voting.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="slider-cooldown">
+            <span>Acceptance Cooldown</span>
+            <span id="val-cooldown">1.2s</span>
+          </label>
+          <input type="range" id="slider-cooldown" min="0.5" max="3.0" step="0.1" value="1.2">
+          <span style="font-size:0.75rem; color:var(--text-dim);">Delay before an identical letter can be accepted again.</span>
+        </div>
+
+        <button class="btn btn-primary" id="btn-apply-settings" style="margin-top:10px;">
+          Apply Settings
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASL Reference Guide Modal -->
+  <div class="modal-overlay" id="guide-modal" role="dialog" aria-modal="true" aria-labelledby="guide-title">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="guide-title" style="font-size:1.1rem; font-weight:700;">ASL Fingerspelling Alphabet Reference</h2>
+        <button class="btn btn-secondary btn-icon" id="btn-close-guide" style="min-height:36px; width:36px;">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:rgba(0,210,180,0.12); padding:10px 14px; border-radius:var(--radius-sm); border:1px solid var(--accent-teal); font-size:0.8rem;">
+          <strong>ASL Alphabet Guide:</strong> BHAVIK recognizes all <strong>26 letters (A–Z)</strong> of the American Sign Language fingerspelling alphabet in real time.
+        </div>
+
+        <div class="asl-alphabet-grid">
+          <div class="asl-letter-card"><span class="char">A</span><span class="desc">Fist, thumb beside</span></div>
+          <div class="asl-letter-card"><span class="char">B</span><span class="desc">Flat 4 fingers up</span></div>
+          <div class="asl-letter-card"><span class="char">C</span><span class="desc">Curved C-shape</span></div>
+          <div class="asl-letter-card"><span class="char">D</span><span class="desc">Index up, loop</span></div>
+          <div class="asl-letter-card"><span class="char">E</span><span class="desc">Curled fingers</span></div>
+          <div class="asl-letter-card"><span class="char">F</span><span class="desc">OK sign (3 up)</span></div>
+          <div class="asl-letter-card"><span class="char">G</span><span class="desc">Index horizontal</span></div>
+          <div class="asl-letter-card"><span class="char">H</span><span class="desc">2 fingers horiz.</span></div>
+          <div class="asl-letter-card"><span class="char">I</span><span class="desc">Pinky straight up</span></div>
+          <div class="asl-letter-card"><span class="char">J</span><span class="desc">Pinky hooked pose</span></div>
+          <div class="asl-letter-card"><span class="char">K</span><span class="desc">V with thumb in</span></div>
+          <div class="asl-letter-card"><span class="char">L</span><span class="desc">L-shape (thumb+index)</span></div>
+          <div class="asl-letter-card"><span class="char">M</span><span class="desc">3 fingers over thumb</span></div>
+          <div class="asl-letter-card"><span class="char">N</span><span class="desc">2 fingers over thumb</span></div>
+          <div class="asl-letter-card"><span class="char">O</span><span class="desc">O-shape circle</span></div>
+          <div class="asl-letter-card"><span class="char">P</span><span class="desc">K pointed down</span></div>
+          <div class="asl-letter-card"><span class="char">Q</span><span class="desc">G pointed down</span></div>
+          <div class="asl-letter-card"><span class="char">R</span><span class="desc">Crossed fingers</span></div>
+          <div class="asl-letter-card"><span class="char">S</span><span class="desc">Fist, thumb over</span></div>
+          <div class="asl-letter-card"><span class="char">T</span><span class="desc">Thumb between 1&2</span></div>
+          <div class="asl-letter-card"><span class="char">U</span><span class="desc">2 fingers together</span></div>
+          <div class="asl-letter-card"><span class="char">V</span><span class="desc">Peace sign (V)</span></div>
+          <div class="asl-letter-card"><span class="char">W</span><span class="desc">3 fingers spread</span></div>
+          <div class="asl-letter-card"><span class="char">X</span><span class="desc">Hooked index</span></div>
+          <div class="asl-letter-card"><span class="char">Y</span><span class="desc">Shaka (thumb+pinky)</span></div>
+          <div class="asl-letter-card"><span class="char">Z</span><span class="desc">Index pointed forward</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MediaPipe Hands Browser Runtime for Serverless GitHub Pages Deployment -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <!-- Application Modular Scripts -->
+  <script src="./js/camera.js"></script>
+  <script src="./js/websocket.js"></script>
+  <script src="./js/transcription.js"></script>
+  <script src="./js/asl_model_data.js"></script>
+  <script src="./js/in_browser_engine.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>

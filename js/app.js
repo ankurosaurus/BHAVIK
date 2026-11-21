@@ -205,16 +205,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Check secure context for mobile devices on load
+  if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    showCameraError({
+      type: 'INSECURE_CONTEXT',
+      message: 'Mobile browsers block camera access on insecure HTTP connections. Please open <a href="https://ankurosaurus.github.io/BHAVIK/" style="color:#00d2b4; text-decoration:underline; font-weight:700;">https://ankurosaurus.github.io/BHAVIK/</a> on your phone to use the camera.'
+    });
+  }
+
   // ==========================================================================
   // Camera User Actions
   // ==========================================================================
   startCameraBtn.addEventListener('click', async () => {
+    // Clear any previous error banner
+    const errorBanner = document.getElementById('camera-error-banner');
+    if (errorBanner) errorBanner.style.display = 'none';
+
     try {
       startCameraBtn.disabled = true;
-      startCameraBtn.textContent = 'Starting...';
+      startCameraBtn.textContent = 'Starting Camera...';
+
+      // 1. Start camera hardware and preview stream
       await camera.startCamera();
 
-      // Determine inference engine: Server WebSocket vs In-Browser ML
+      // 2. IMMEDIATELY display the live video feed and toggle controls!
+      emptyState.style.display = 'none';
+      startCameraBtn.style.display = 'none';
+      stopCameraBtn.style.display = 'inline-flex';
+      switchCameraBtn.disabled = false;
+      mirrorToggleBtn.disabled = false;
+      hudHandStatus.textContent = 'Camera: ACTIVE';
+
+      // 3. Connect AI engine (Server WebSocket vs Client-side MediaPipe) asynchronously
       if (socket.isConnected) {
         camera.setMode('server');
         serverStatusDot.className = 'status-dot online';
@@ -222,8 +244,9 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         // Fallback to client-side in-browser MediaPipe if server is not connected (e.g. GitHub Pages)
         if (typeof inBrowserEngine !== 'undefined' && inBrowserEngine.isReady()) {
-          serverStatusText.textContent = 'Initializing Browser AI...';
-          const initialized = await camera.initInBrowserMediaPipe((results) => {
+          serverStatusText.textContent = 'Loading Browser AI...';
+
+          camera.initInBrowserMediaPipe((results) => {
             if (camera.mode !== 'client') return;
 
             let landmarks = null;
@@ -241,27 +264,29 @@ document.addEventListener('DOMContentLoaded', () => {
               updateTranscriptionMeta(transcription.getState());
             }
             handleRecognitionData(res);
-          });
-
-          if (initialized) {
-            camera.setMode('client');
-            serverStatusDot.className = 'status-dot online';
-            serverStatusText.textContent = 'AI Engine: Browser Active';
-          } else {
+          }).then((initialized) => {
+            if (initialized) {
+              camera.setMode('client');
+              serverStatusDot.className = 'status-dot online';
+              serverStatusText.textContent = 'AI Engine: Browser Active';
+            } else {
+              camera.setMode('server');
+              serverStatusDot.className = 'status-dot';
+              serverStatusText.textContent = 'AI Disconnected';
+            }
+          }).catch((err) => {
+            console.warn('In-browser AI init error:', err);
             camera.setMode('server');
-          }
+            serverStatusDot.className = 'status-dot';
+            serverStatusText.textContent = 'AI Disconnected';
+          });
         } else {
           camera.setMode('server');
         }
       }
-
-      emptyState.style.display = 'none';
-      startCameraBtn.style.display = 'none';
-      stopCameraBtn.style.display = 'inline-flex';
-      switchCameraBtn.disabled = false;
-      mirrorToggleBtn.disabled = false;
     } catch (err) {
       console.error('Camera startup error:', err);
+      showCameraError(camera.formatCameraError(err));
     } finally {
       startCameraBtn.disabled = false;
       startCameraBtn.textContent = 'Start Camera';
@@ -287,9 +312,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   switchCameraBtn.addEventListener('click', async () => {
     try {
+      switchCameraBtn.disabled = true;
       await camera.switchCamera();
     } catch (err) {
       console.warn('Unable to switch camera:', err);
+      showCameraError(camera.formatCameraError(err));
+    } finally {
+      switchCameraBtn.disabled = false;
     }
   });
 
@@ -299,7 +328,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   function showCameraError(errInfo) {
-    alert(`Camera Notice: ${errInfo.message}`);
+    const errorBanner = document.getElementById('camera-error-banner');
+    if (errorBanner) {
+      errorBanner.innerHTML = `<strong>⚠️ Camera Notice:</strong> ${errInfo.message}`;
+      errorBanner.style.display = 'block';
+    } else {
+      alert(`Camera Notice: ${errInfo.message}`);
+    }
   }
 
   // ==========================================================================

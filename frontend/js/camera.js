@@ -58,64 +58,132 @@ class CameraController {
       this.stopCamera();
     }
 
-    const constraints = {
-      audio: false,
-      video: {
-        width: { ideal: this.width },
-        height: { ideal: this.height },
-        frameRate: { ideal: this.targetFps, max: 30 }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const isSecure = window.isSecureContext;
+      const errorMsg = !isSecure
+        ? 'Mobile browsers block camera access on insecure HTTP origins. Please open https://ankurosaurus.github.io/BHAVIK/'
+        : 'Camera API (navigator.mediaDevices.getUserMedia) is not supported in this browser context.';
+      const err = new Error(errorMsg);
+      err.name = !isSecure ? 'NotSecureContext' : 'NotSupportedError';
+      if (this.onErrorCallback) {
+        this.onErrorCallback(this.formatCameraError(err));
       }
-    };
+      throw err;
+    }
+
+    // Critical mobile attributes for iOS Safari & Android WebViews
+    this.video.setAttribute('playsinline', 'true');
+    this.video.setAttribute('webkit-playsinline', 'true');
+    this.video.muted = true;
+    this.video.playsInline = true;
+    this.video.autoplay = true;
+
+    // Progressive candidate constraints cascade (Tier 1 -> Tier 2 -> Tier 3)
+    const candidateConstraints = [];
 
     if (deviceId) {
-      constraints.video.deviceId = { exact: deviceId };
-    } else {
-      constraints.video.facingMode = facingMode;
+      candidateConstraints.push({
+        audio: false,
+        video: { deviceId: { exact: deviceId } }
+      });
     }
 
-    try {
-      this.stream = await navigator.mediaDevices.getUserMedia(constraints);
-      this.video.srcObject = this.stream;
-      await this.video.play();
-
-      this.facingMode = facingMode;
-      this.activeDeviceId = deviceId;
-      this.isStreaming = true;
-
-      // Adjust preview mirroring (mirror user front camera, unmirror rear camera)
-      if (this.facingMode === 'user') {
-        this.video.classList.add('mirrored');
-        this.canvas.classList.add('mirrored');
-      } else {
-        this.video.classList.remove('mirrored');
-        this.canvas.classList.remove('mirrored');
+    // Tier 1: Ideal facingMode and ideal resolution
+    candidateConstraints.push({
+      audio: false,
+      video: {
+        facingMode: { ideal: facingMode },
+        width: { ideal: this.width },
+        height: { ideal: this.height }
       }
+    });
 
-      // Sync canvas dimensions to actual video stream resolution
-      const updateDimensions = () => {
-        const vw = this.video.videoWidth || this.width;
-        const vh = this.video.videoHeight || this.height;
-        if (vw > 0 && vh > 0) {
-          this.canvas.width = vw;
-          this.canvas.height = vh;
-          this.offscreenCanvas.width = vw;
-          this.offscreenCanvas.height = vh;
+    // Tier 2: Ideal facingMode only
+    candidateConstraints.push({
+      audio: false,
+      video: {
+        facingMode: { ideal: facingMode }
+      }
+    });
+
+    // Tier 3: Any available video stream
+    candidateConstraints.push({
+      audio: false,
+      video: true
+    });
+
+    let stream = null;
+    let lastError = null;
+
+    for (const c of candidateConstraints) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(c);
+        if (stream) break;
+      } catch (err) {
+        lastError = err;
+        console.warn('getUserMedia candidate constraint failed:', err.name, c);
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          // User rejected camera permission prompt; don't retry repeatedly
+          break;
         }
-      };
-      updateDimensions();
-      this.video.addEventListener('loadeddata', updateDimensions, { once: true });
-      this.video.addEventListener('resize', updateDimensions);
-
-      this.startFrameCaptureLoop();
-      await this.enumerateCameras();
-      return true;
-    } catch (error) {
-      this.isStreaming = false;
-      if (this.onErrorCallback) {
-        this.onErrorCallback(this.formatCameraError(error));
       }
-      throw error;
     }
+
+    if (!stream) {
+      this.isStreaming = false;
+      const formattedErr = this.formatCameraError(lastError || new Error('No camera stream acquired.'));
+      if (this.onErrorCallback) {
+        this.onErrorCallback(formattedErr);
+      }
+      throw lastError || new Error(formattedErr.message);
+    }
+
+    this.stream = stream;
+    this.video.srcObject = this.stream;
+    this.facingMode = facingMode;
+    this.activeDeviceId = deviceId;
+    this.isStreaming = true;
+
+    // Adjust preview mirroring (mirror user front camera, unmirror rear camera)
+    if (this.facingMode === 'user') {
+      this.video.classList.add('mirrored');
+      this.canvas.classList.add('mirrored');
+    } else {
+      this.video.classList.remove('mirrored');
+      this.canvas.classList.remove('mirrored');
+    }
+
+    // Play video stream with mobile recovery
+    try {
+      await this.video.play();
+    } catch (playErr) {
+      console.warn('Direct video.play() failed, attempting recovery:', playErr);
+      this.video.muted = true;
+      try {
+        await this.video.play();
+      } catch (e2) {
+        console.warn('Muted video.play() recovery failed:', e2);
+      }
+    }
+
+    // Sync canvas dimensions to actual video stream resolution
+    const updateDimensions = () => {
+      const vw = this.video.videoWidth || this.width;
+      const vh = this.video.videoHeight || this.height;
+      if (vw > 0 && vh > 0) {
+        this.canvas.width = vw;
+        this.canvas.height = vh;
+        this.offscreenCanvas.width = vw;
+        this.offscreenCanvas.height = vh;
+      }
+    };
+    updateDimensions();
+    this.video.addEventListener('loadeddata', updateDimensions, { once: true });
+    this.video.addEventListener('resize', updateDimensions);
+
+    this.startFrameCaptureLoop();
+    this.enumerateCameras().catch(() => {});
+    return true;
   }
 
   stopCamera() {
@@ -167,6 +235,14 @@ class CameraController {
     if (this.mpHands) {
       this.useInBrowserMediaPipe = true;
       return true;
+    }
+
+    // Wait up to 6 seconds for MediaPipe Hands CDN script if loading over mobile network
+    if (typeof window.Hands !== 'function') {
+      for (let i = 0; i < 24; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+        if (typeof window.Hands === 'function') break;
+      }
     }
 
     if (typeof window.Hands !== 'function') {
@@ -299,27 +375,45 @@ class CameraController {
   }
 
   formatCameraError(err) {
+    if (!err) {
+      return {
+        type: 'UNKNOWN',
+        message: 'An unknown camera error occurred.'
+      };
+    }
+    if (err.name === 'NotSecureContext') {
+      return {
+        type: 'INSECURE_CONTEXT',
+        message: 'Mobile browsers block camera access on insecure HTTP connections. Please open https://ankurosaurus.github.io/BHAVIK/ on your phone to use the camera.'
+      };
+    }
     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
       return {
         type: 'PERMISSION_DENIED',
-        message: 'Camera permission was denied. Please grant permission in your browser address bar settings to recognize sign gestures.'
+        message: 'Camera permission was denied. Tap the lock/tune icon in your phone browser address bar, set Camera to "Allow", and tap "Start Camera" again.'
       };
     }
     if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
       return {
         type: 'NO_CAMERA',
-        message: 'No supported video camera was detected on this device.'
+        message: 'No video camera was detected on this device.'
       };
     }
     if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
       return {
         type: 'CAMERA_BUSY',
-        message: 'Camera is currently in use by another application or browser tab.'
+        message: 'Camera is currently in use by another app or browser tab. Please close other camera apps and try again.'
+      };
+    }
+    if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
+      return {
+        type: 'OVERCONSTRAINED',
+        message: 'The requested camera mode could not be satisfied. Retrying with basic settings...'
       };
     }
     return {
       type: 'UNKNOWN',
-      message: err.message || 'An unexpected error occurred while accessing the camera.'
+      message: err.message || 'Unable to start camera on this device.'
     };
   }
 }

@@ -13,7 +13,7 @@
   <link rel="icon" type="image/png" href="./assets/icon-192.png">
 
   <!-- Core Stylesheet -->
-  <link rel="stylesheet" href="./css/style.css">
+  <link rel="stylesheet" href="./css/style.css?v=2">
 </head>
 <body>
 
@@ -63,6 +63,8 @@
           <span class="card-title">Live Video Input</span>
           <span class="hud-pill" id="hud-fps">0 FPS</span>
         </div>
+        <!-- Camera Error Notice Banner -->
+        <div class="camera-error-banner" id="camera-error-banner" role="alert" style="display:none; background:rgba(239,68,68,0.15); border:1px solid #ef4444; border-radius:8px; padding:12px 16px; color:#fca5a5; font-size:0.85rem; line-height:1.5;"></div>
 
         <div class="camera-viewport">
           <video id="camera-video" playsinline autoplay muted aria-label="Live Camera Stream"></video>
@@ -272,11 +274,11 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
   <!-- Application Modular Scripts -->
-  <script src="./js/camera.js"></script>
-  <script src="./js/websocket.js"></script>
-  <script src="./js/transcription.js"></script>
-  <script src="./js/asl_model_data.js"></script>
-  <script src="./js/in_browser_engine.js"></script>
-  <script src="./js/app.js"></script>
+  <script src="./js/camera.js?v=2"></script>
+  <script src="./js/websocket.js?v=2"></script>
+  <script src="./js/transcription.js?v=2"></script>
+  <script src="./js/asl_model_data.js?v=2"></script>
+  <script src="./js/in_browser_engine.js?v=2"></script>
+  <script src="./js/app.js?v=2"></script>
 </body>
 </html>
